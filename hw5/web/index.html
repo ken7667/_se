@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docker 微服務展示</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --ok: #4ade80;
+      --err: #f87171;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, "Segoe UI", "Microsoft JhengHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem 1rem;
+    }
+    .wrap { max-width: 900px; margin: 0 auto; }
+    h1 { margin: 0 0 .25rem; font-size: 1.6rem; }
+    .sub { color: var(--muted); margin-bottom: 1.5rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+    .card h2 { margin: 0 0 .5rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+    .row { display: flex; justify-content: space-between; gap: 1rem; font-size: .9rem; padding: .15rem 0; }
+    .row span:last-child { color: var(--accent); text-align: right; word-break: break-all; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); margin-right: .5rem; }
+    .dot.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .dot.err { background: var(--err); box-shadow: 0 0 8px var(--err); }
+    section { margin-top: 2rem; }
+    form { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    input, textarea {
+      background: #0b1220; border: 1px solid #334155; color: var(--text);
+      border-radius: 8px; padding: .6rem .75rem; font: inherit;
+    }
+    input { flex: 1 1 160px; }
+    textarea { flex: 1 1 100%; resize: vertical; min-height: 60px; }
+    button {
+      background: var(--accent); color: #04233a; border: 0; border-radius: 8px;
+      padding: .6rem 1.2rem; font: inherit; font-weight: 700; cursor: pointer;
+    }
+    button:hover { filter: brightness(1.1); }
+    .msg { border-bottom: 1px solid #334155; padding: .6rem 0; }
+    .msg:last-child { border-bottom: 0; }
+    .msg .meta { color: var(--muted); font-size: .78rem; }
+    .msg .who { color: var(--accent); font-weight: 600; }
+    code { background: #0b1220; padding: .1rem .4rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Docker 微服務系統展示</h1>
+    <p class="sub">nginx (reverse proxy) &rarr; Node.js API &rarr; PostgreSQL</p>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Reverse Proxy</h2>
+        <div class="row"><span><span class="dot ok"></span>nginx</span><span>Up</span></div>
+        <div class="row"><span>路徑</span><span>/api/ &rarr; api:3000</span></div>
+      </div>
+      <div class="card">
+        <h2>API Service</h2>
+        <div class="row"><span><span id="apiDot" class="dot"></span>node</span><span id="apiStatus">檢查中…</span></div>
+        <div class="row"><span>container</span><span id="apiHost">-</span></div>
+        <div class="row"><span>版本</span><span id="apiNode">-</span></div>
+        <div class="row"><span>uptime</span><span id="apiUptime">-</span></div>
+      </div>
+      <div class="card">
+        <h2>Database</h2>
+        <div class="row"><span><span id="dbDot" class="dot"></span>postgres</span><span id="dbStatus">檢查中…</span></div>
+        <div class="row"><span>版本</span><span id="dbVersion">-</span></div>
+        <div class="row"><span>留言數</span><span id="dbCount">-</span></div>
+      </div>
+    </div>
+
+    <section>
+      <h2 style="font-size:1rem">留言板 <span style="color:var(--muted);font-weight:400">(資料存在 PostgreSQL)</span></h2>
+      <form id="msgForm">
+        <input id="name" placeholder="你的名字" maxlength="60" required />
+        <textarea id="content" placeholder="留個訊息…" maxlength="1000" required></textarea>
+        <button type="submit">送出</button>
+      </form>
+      <div id="messages"></div>
+    </section>
+
+    <p class="sub" style="margin-top:2rem">
+      提示：API 回應標頭含 <code>X-Served-By: nginx-reverse-proxy</code>，
+      證明你的請求是先經過 nginx 才轉到 Node.js。
+    </p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    function setDot(el, ok) {
+      el.className = "dot " + (ok ? "ok" : "err");
+    }
+
+    async function loadInfo() {
+      try {
+        const res = await fetch("/api/info");
+        const data = await res.json();
+        setDot($("apiDot"), true);
+        setDot($("dbDot"), true);
+        $("apiStatus").textContent = "OK";
+        $("dbStatus").textContent = "OK";
+        $("apiHost").textContent = data.api.hostname;
+        $("apiNode").textContent = data.api.node;
+        $("apiUptime").textContent = data.api.uptimeSeconds + "s";
+        $("dbVersion").textContent = data.database.version;
+        $("dbCount").textContent = data.database.messages;
+      } catch (e) {
+        setDot($("apiDot"), false);
+        setDot($("dbDot"), false);
+        $("apiStatus").textContent = "錯誤";
+        $("dbStatus").textContent = "錯誤";
+      }
+    }
+
+    function renderMessages(rows) {
+      const box = $("messages");
+      if (!rows.length) {
+        box.innerHTML = '<p class="sub">還沒有留言，當第一個吧！</p>';
+        return;
+      }
+      box.innerHTML = rows.map((m) => `
+        <div class="msg">
+          <div class="meta">
+            <span class="who">${escapeHtml(m.name)}</span>
+            · ${new Date(m.created_at).toLocaleString()}
+          </div>
+          <div>${escapeHtml(m.content)}</div>
+        </div>
+      `).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      })[c]);
+    }
+
+    async function loadMessages() {
+      const res = await fetch("/api/messages");
+      renderMessages(await res.json());
+    }
+
+    $("msgForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = $("name").value.trim();
+      const content = $("content").value.trim();
+      if (!name || !content) return;
+      await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, content }),
+      });
+      $("content").value = "";
+      await loadMessages();
+      await loadInfo();
+    });
+
+    loadInfo();
+    loadMessages();
+    setInterval(loadInfo, 5000);
+  </script>
+</body>
+</html>

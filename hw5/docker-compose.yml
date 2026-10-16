@@ -1,0 +1,74 @@
+services:
+  # 1. 資料庫：PostgreSQL
+  db:
+    image: postgres:16-alpine
+    container_name: demo-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - demo-net
+
+  # 2. 後端 API：Node.js + Express
+  api:
+    build: ./api
+    container_name: demo-api
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - demo-net
+
+  # 3. 反向代理 + 靜態網頁：nginx
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: demo-nginx
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./web:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+    networks:
+      - demo-net
+
+  # 4. 開發環境（選用）：用 `docker compose --profile dev up -d` 啟動
+  dev:
+    build: .
+    container_name: demo-dev
+    restart: unless-stopped
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+    command: sleep infinity
+    profiles:
+      - dev
+    networks:
+      - demo-net
+
+volumes:
+  db-data:
+
+networks:
+  demo-net:
+    driver: bridge
